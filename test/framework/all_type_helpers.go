@@ -118,8 +118,38 @@ const (
 	Full
 )
 
+//go:generate go run golang.org/x/tools/cmd/stringer -type=HelmCommand all_type_helpers.go
+type HelmCommand int
+
+const (
+	Install HelmCommand = iota
+	Uninstall
+	Repo
+	Template
+	Add
+	Update
+	Remove
+)
+
+// Commands generate a valid list of helm commands from input or defaults to install
+func Commands(commands ...HelmCommand) []HelmCommand {
+	if commands == nil {
+		return []HelmCommand{Install}
+	}
+	return commands
+}
+
+// Flags returns a list of additional flags for helm chart
+func Flags(flags ...string) []string {
+	if flags == nil {
+		return []string{}
+	}
+	return flags
+}
+
 type HelmChart struct {
 	BinaryPath      string
+	Commands        []HelmCommand
 	Path            string
 	Name            string
 	Kubeconfig      string
@@ -129,11 +159,16 @@ type HelmChart struct {
 	Output          HelmOutput
 }
 
-// InstallChart performs an install of the helm chart. Install returns the rendered manifest
-// with some additional data that can't be parsed as yaml. This function processes the output and returns only the optional resources,
+// Run performs an execution of the helm command. Run returns the output
+// with some additional data that can't be parsed as yaml.
+// This function processes the output and returns only the optional resources,
 // marked as post install hooks.
-func (h *HelmChart) InstallChart(values map[string]string) (string, error) {
-	args := []string{"install", "--kubeconfig", h.Kubeconfig, h.Name, h.Path}
+func (h *HelmChart) Run(values map[string]string) (string, error) {
+	args := []string{}
+	for _, command := range Commands(h.Commands...) {
+		args = append(args, strings.ToLower(command.String()))
+	}
+	args = append(args, []string{"--kubeconfig", h.Kubeconfig, h.Name, h.Path}...)
 	if h.DryRun {
 		args = append(args, "--dry-run")
 	}
@@ -144,10 +179,10 @@ func (h *HelmChart) InstallChart(values map[string]string) (string, error) {
 		args = append(args, "--set")
 		args = append(args, fmt.Sprintf("%s=%s", key, value))
 	}
-	if h.AdditionalFlags != nil {
-		args = append(args, h.AdditionalFlags...)
+	args = append(args, Flags(h.AdditionalFlags...)...)
+	if h.BinaryPath == "" {
+		h.BinaryPath = "helm"
 	}
-
 	fullCommand := append([]string{h.BinaryPath}, args...)
 	klog.Infof("Executing: %s", fullCommand, " ")
 	cmd := exec.Command(h.BinaryPath, args...)
