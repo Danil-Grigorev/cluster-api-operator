@@ -26,6 +26,12 @@ jobs:
       - name: Generate release artifacts
         run: |
           make release
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v3
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --timeout 60m
       - name: Create draft GH release
         uses: softprops/action-gh-release@v1
         with:
@@ -33,4 +39,5 @@ jobs:
           files: |
             out/operator-components.yaml
             out/package/*
+            dist/*.tar.gz
           body: "TODO: Add release notes here."
