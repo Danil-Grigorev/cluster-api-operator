@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"fmt"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -120,6 +121,7 @@ var _ = Describe("Install Core Provider in an air-gapped environment", func() {
 
 		By("Waiting for status.IntalledVersion to be set")
 		WaitFor(ctx, For(coreProvider).In(bootstrapCluster).ToSatisfy(func() bool {
+			fmt.Fprintf(os.Stderr, "%s\n", coreProvider.GetConditions())
 			return ptr.Equal(coreProvider.Status.InstalledVersion, ptr.To(previousCAPIVersion))
 		}), e2eConfig.GetIntervals(bootstrapClusterProxy.GetName(), "wait-controllers")...)
 	})

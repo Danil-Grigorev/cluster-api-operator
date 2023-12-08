@@ -30,7 +30,7 @@ var (
 const (
 	operatorNamespace = "capi-operator-system"
 
-	previousCAPIVersion = "v1.4.2"
+	previousCAPIVersion = "v1.4.3"
 
 	coreProviderName           = "cluster-api"
 	coreProviderDeploymentName = "capi-controller-manager"

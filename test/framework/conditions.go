@@ -21,6 +21,7 @@ package framework
 
 import (
 	"fmt"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 
@@ -31,6 +32,8 @@ import (
 func HaveStatusCondition(conditions *clusterv1.Conditions, condition clusterv1.ConditionType) Condition {
 	return func() bool {
 		By(fmt.Sprintf("Checking if %s condition is set...", condition))
+
+		fmt.Fprintf(os.Stderr, "%s\n", conditions)
 		for _, c := range *conditions {
 			if c.Type == condition && c.Status == corev1.ConditionTrue {
 				return true

@@ -8910,7 +8910,7 @@ data:
                         type: string
                       containerRuntimeVersion:
                         description: ContainerRuntime Version reported by the node through
-                          runtime remote API (e.g. containerd://1.4.2).
+                          runtime remote API (e.g. containerd://1.4.3).
                         type: string
                       kernelVersion:
                         description: Kernel Version reported by the node from 'uname -r'
@@ -9321,7 +9321,7 @@ data:
                         type: string
                       containerRuntimeVersion:
                         description: ContainerRuntime Version reported by the node through
-                          runtime remote API (e.g. containerd://1.4.2).
+                          runtime remote API (e.g. containerd://1.4.3).
                         type: string
                       kernelVersion:
                         description: Kernel Version reported by the node from 'uname -r'

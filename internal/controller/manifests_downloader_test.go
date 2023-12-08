@@ -45,7 +45,7 @@ func TestManifestsDownloader(t *testing.T) {
 			},
 			Spec: operatorv1.CoreProviderSpec{
 				ProviderSpec: operatorv1.ProviderSpec{
-					Version: "v1.4.3",
+					Version: "v1.4.4",
 				},
 			},
 		},

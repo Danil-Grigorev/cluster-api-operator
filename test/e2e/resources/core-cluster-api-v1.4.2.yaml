@@ -8895,7 +8895,7 @@ data:
                         type: string
                       containerRuntimeVersion:
                         description: ContainerRuntime Version reported by the node through
-                          runtime remote API (e.g. containerd://1.4.2).
+                          runtime remote API (e.g. containerd://1.4.3).
                         type: string
                       kernelVersion:
                         description: Kernel Version reported by the node from 'uname -r'
@@ -9306,7 +9306,7 @@ data:
                         type: string
                       containerRuntimeVersion:
                         description: ContainerRuntime Version reported by the node through
-                          runtime remote API (e.g. containerd://1.4.2).
+                          runtime remote API (e.g. containerd://1.4.3).
                         type: string
                       kernelVersion:
                         description: Kernel Version reported by the node from 'uname -r'
@@ -11142,7 +11142,7 @@ data:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
-            image: registry.k8s.io/cluster-api/cluster-api-controller:v1.4.2
+            image: registry.k8s.io/cluster-api/cluster-api-controller:v1.4.3
             imagePullPolicy: IfNotPresent
             livenessProbe:
               httpGet:
@@ -11737,6 +11737,6 @@ metadata:
   labels:
     provider.cluster.x-k8s.io/name: cluster-api
     provider.cluster.x-k8s.io/type: core
-    provider.cluster.x-k8s.io/version: v1.4.2
-  name: core-cluster-api-v1.4.2
+    provider.cluster.x-k8s.io/version: v1.4.3
+  name: core-cluster-api-v1.4.3
   namespace: capi-operator-system

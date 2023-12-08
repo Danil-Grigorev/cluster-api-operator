@@ -88,15 +88,6 @@ metadata:
 			Deployment: &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: coreProviderDeploymentName, Namespace: operatorNamespace}},
 		}, e2eConfig.GetIntervals(bootstrapClusterProxy.GetName(), "wait-controllers")...)
 
-		By("Checking for deployment to have additional labels")
-		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: coreProviderDeploymentName, Namespace: operatorNamespace}}
-		WaitFor(ctx, For(deployment).In(bootstrapCluster).ToSatisfy(func() bool {
-			if v, ok := deployment.Labels["test-label"]; ok {
-				return v == "test-value"
-			}
-			return false
-		}), e2eConfig.GetIntervals(bootstrapClusterProxy.GetName(), "wait-controllers")...)
-
 		By("Waiting for core provider to be ready")
 		WaitFor(ctx, For(coreProvider).In(bootstrapCluster).ToSatisfy(
 			HaveStatusCondition(&coreProvider.Status.Conditions, operatorv1.ProviderInstalledCondition)),
@@ -105,6 +96,15 @@ metadata:
 		By("Waiting for status.IntalledVersion to be set")
 		WaitFor(ctx, For(coreProvider).In(bootstrapCluster).ToSatisfy(func() bool {
 			return ptr.Equal(coreProvider.Status.InstalledVersion, &coreProvider.Spec.Version)
+		}), e2eConfig.GetIntervals(bootstrapClusterProxy.GetName(), "wait-controllers")...)
+
+		By("Checking for deployment to have additional labels")
+		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: coreProviderDeploymentName, Namespace: operatorNamespace}}
+		WaitFor(ctx, For(deployment).In(bootstrapCluster).ToSatisfy(func() bool {
+			if v, ok := deployment.Labels["test-label"]; ok {
+				return v == "test-value"
+			}
+			return false
 		}), e2eConfig.GetIntervals(bootstrapClusterProxy.GetName(), "wait-controllers")...)
 
 		By("Checking if additional manifests are applied")
