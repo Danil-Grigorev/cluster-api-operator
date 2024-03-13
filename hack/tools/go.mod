@@ -2,8 +2,6 @@ module sigs.k8s.io/cluster-api-operator/hack/tools
 
 go 1.21
 
-toolchain go1.21.3
-
 replace sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.1
 
 require (
