@@ -1,6 +1,6 @@
 module sigs.k8s.io/cluster-api-operator/hack/tools
 
-go 1.21
+go 1.20
 
 replace sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.1
 
