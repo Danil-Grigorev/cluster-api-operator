@@ -54,8 +54,8 @@ var (
 	errCoreProviderWait = errors.New(waitingForCoreProviderReadyMessage)
 )
 
-// preflightChecks performs preflight checks before installing provider.
-func preflightChecks(ctx context.Context, c client.Client, provider genericprovider.GenericProvider, providerList genericprovider.GenericProviderList) error {
+// providerPreflightChecks performs preflight checks before installing provider.
+func providerPreflightChecks(ctx context.Context, c client.Client, provider genericprovider.GenericProvider, providerList genericprovider.GenericProviderList) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	log.Info("Performing preflight checks")
@@ -66,39 +66,6 @@ func preflightChecks(ctx context.Context, c client.Client, provider genericprovi
 		// Check that the provider version is supported.
 		if err := checkProviderVersion(ctx, spec.Version, provider); err != nil {
 			return err
-		}
-	}
-
-	// Ensure that the CoreProvider is called "cluster-api".
-	if util.IsCoreProvider(provider) {
-		if provider.GetName() != configclient.ClusterAPIProviderName {
-			conditions.Set(provider, conditions.FalseCondition(
-				operatorv1.PreflightCheckCondition,
-				operatorv1.IncorrectCoreProviderNameReason,
-				clusterv1.ConditionSeverityError,
-				"%s", fmt.Sprintf(incorrectCoreProviderNameMessage, provider.GetName(), configclient.ClusterAPIProviderName),
-			))
-
-			return fmt.Errorf("incorrect CoreProvider name: %s, it should be %s", provider.GetName(), configclient.ClusterAPIProviderName)
-		}
-	}
-
-	// Check that if a predefined provider is being installed, and if it's not - ensure that FetchConfig is specified.
-	isPredefinedProvider, err := isPredefinedProvider(ctx, provider.GetName(), util.ClusterctlProviderType(provider))
-	if err != nil {
-		return fmt.Errorf("failed to generate a list of predefined providers: %w", err)
-	}
-
-	if !isPredefinedProvider {
-		if spec.FetchConfig == nil || spec.FetchConfig.Selector == nil && spec.FetchConfig.URL == "" && spec.FetchConfig.OCI == "" {
-			conditions.Set(provider, conditions.FalseCondition(
-				operatorv1.PreflightCheckCondition,
-				operatorv1.FetchConfigValidationErrorReason,
-				clusterv1.ConditionSeverityError,
-				"Either Selector, OCI URL or provider URL must be provided for a not predefined provider",
-			))
-
-			return fmt.Errorf("either selector, OCI URL or provider URL must be provided for a not predefined provider %s", provider.GetName())
 		}
 	}
 
@@ -113,6 +80,77 @@ func preflightChecks(ctx context.Context, c client.Client, provider genericprovi
 
 		return fmt.Errorf("only one of Selector and URL must be provided for provider %s", provider.GetName())
 	}
+
+	if err := c.List(ctx, providerList); err != nil {
+		return fmt.Errorf("failed to list providers: %w", err)
+	}
+
+	// Check that no more than one instance of the provider is installed.
+	for _, p := range providerList.GetItems() {
+		// Skip if provider in the list is the same as provider it's compared with.
+		if p.GetNamespace() == provider.GetNamespace() && p.GetName() == provider.GetName() {
+			continue
+		}
+
+		preflightFalseCondition := conditions.FalseCondition(
+			operatorv1.PreflightCheckCondition,
+			operatorv1.MoreThanOneProviderInstanceExistsReason,
+			clusterv1.ConditionSeverityError,
+			"",
+		)
+
+		// For any other provider we should check that instances with similar name exist in any namespace
+		if p.GetObjectKind().GroupVersionKind().Kind != coreProvider && p.GetName() == provider.GetName() {
+			preflightFalseCondition.Message = fmt.Sprintf(moreThanOneProviderInstanceExistsMessage, p.GetName(), p.GetNamespace())
+			log.Info(preflightFalseCondition.Message)
+			conditions.Set(provider, preflightFalseCondition)
+
+			return fmt.Errorf("only one %s provider is allowed in the cluster", p.GetName())
+		}
+	}
+
+	return nil
+}
+
+// preflightChecks performs preflight checks before installing any provider.
+func preflightChecks(ctx context.Context, c client.Client, provider genericprovider.GenericProvider, providerList genericprovider.GenericProviderList, mapper ProviderTypeMapper) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	if !util.IsCoreProvider(provider) {
+		if err := providerPreflightChecks(ctx, c, provider, providerList); err != nil {
+			return err
+		}
+
+	} else {
+		if err := corePreflightChecks(ctx, c, provider, providerList); err != nil {
+			return err
+		}
+	}
+
+	if err := checkGithubToken(ctx, c, provider); err != nil {
+		return err
+	}
+
+	if err := checkPredefinedProvider(ctx, provider, mapper); err != nil {
+		return err
+	}
+
+	if !util.IsCoreProvider(provider) {
+		if err := waitForCoreReady(ctx, c, provider); err != nil {
+			return err
+		}
+	}
+
+	conditions.Set(provider, conditions.TrueCondition(operatorv1.PreflightCheckCondition))
+
+	log.Info("Preflight checks passed")
+
+	return nil
+}
+
+// checkGithubToken checks that provided GitHub token, when provider, works and has repository access.
+func checkGithubToken(ctx context.Context, c client.Client, provider genericprovider.GenericProvider) error {
+	spec := provider.GetSpec()
 
 	// Validate that provided GitHub token works and has repository access.
 	if spec.ConfigSecret != nil {
@@ -140,6 +178,85 @@ func preflightChecks(ctx context.Context, c client.Client, provider genericprovi
 		}
 	}
 
+	return nil
+}
+
+// checkPredefinedProvider checks that if a predefined provider is being installed, and if it's not - ensure that FetchConfig is specified.
+func checkPredefinedProvider(ctx context.Context, provider genericprovider.GenericProvider, mapper ProviderTypeMapper) error {
+	spec := provider.GetSpec()
+
+	// Check that if a predefined provider is being installed, and if it's not - ensure that FetchConfig is specified.
+	isPredefinedProvider, err := isPredefinedProvider(ctx, provider.ProviderName(), mapper(provider))
+	if err != nil {
+		return fmt.Errorf("failed to generate a list of predefined providers: %w", err)
+	}
+
+	if !isPredefinedProvider {
+		if spec.FetchConfig == nil || spec.FetchConfig.Selector == nil && spec.FetchConfig.URL == "" && spec.FetchConfig.OCI == "" {
+			conditions.Set(provider, conditions.FalseCondition(
+				operatorv1.PreflightCheckCondition,
+				operatorv1.FetchConfigValidationErrorReason,
+				clusterv1.ConditionSeverityError,
+				"Either Selector, OCI URL or provider URL must be provided for a not predefined provider",
+			))
+
+			return fmt.Errorf("either selector, OCI URL or provider URL must be provided for a not predefined provider %s with type %s", provider.GetName(), mapper(provider))
+		}
+	}
+
+	return nil
+}
+
+// preflightChecks performs preflight checks before installing provider.
+func waitForCoreReady(ctx context.Context, c client.Client, provider genericprovider.GenericProvider) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Wait for core provider to be ready before we install other providers.
+	ready, err := coreProviderIsReady(ctx, c)
+	if err != nil {
+		return fmt.Errorf("failed to get coreProvider ready condition: %w", err)
+	}
+
+	if !ready {
+		log.Info(waitingForCoreProviderReadyMessage)
+		conditions.Set(provider, conditions.FalseCondition(
+			operatorv1.PreflightCheckCondition,
+			operatorv1.WaitingForCoreProviderReadyReason,
+			clusterv1.ConditionSeverityInfo,
+			"%s", waitingForCoreProviderReadyMessage,
+		))
+
+		return errCoreProviderWait
+	}
+
+	return nil
+}
+
+// corePreflightChecks performs preflight checks before installing core provider.
+func corePreflightChecks(ctx context.Context, c client.Client, provider genericprovider.GenericProvider, providerList genericprovider.GenericProviderList) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	spec := provider.GetSpec()
+
+	if spec.Version != "" {
+		// Check that the provider version is supported.
+		if err := checkProviderVersion(ctx, spec.Version, provider); err != nil {
+			return err
+		}
+	}
+
+	// Ensure that the CoreProvider is called "cluster-api".
+	if provider.ProviderName() != configclient.ClusterAPIProviderName {
+		conditions.Set(provider, conditions.FalseCondition(
+			operatorv1.PreflightCheckCondition,
+			operatorv1.IncorrectCoreProviderNameReason,
+			clusterv1.ConditionSeverityError,
+			"%s", fmt.Sprintf(incorrectCoreProviderNameMessage, provider.ProviderName(), configclient.ClusterAPIProviderName),
+		))
+
+		return fmt.Errorf("incorrect CoreProvider name: %s, it should be %s", provider.ProviderName(), configclient.ClusterAPIProviderName)
+	}
+
 	if err := c.List(ctx, providerList); err != nil {
 		return fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -159,47 +276,12 @@ func preflightChecks(ctx context.Context, c client.Client, provider genericprovi
 		)
 
 		// CoreProvider is a singleton resource, more than one instances should not exist
-		if util.IsCoreProvider(p) {
-			log.Info(moreThanOneCoreProviderInstanceExistsMessage)
-			preflightFalseCondition.Message = moreThanOneCoreProviderInstanceExistsMessage
-			conditions.Set(provider, preflightFalseCondition)
+		log.Info(moreThanOneCoreProviderInstanceExistsMessage)
+		preflightFalseCondition.Message = moreThanOneCoreProviderInstanceExistsMessage
+		conditions.Set(provider, preflightFalseCondition)
 
-			return fmt.Errorf("only one instance of CoreProvider is allowed")
-		}
-
-		// For any other provider we should check that instances with similar name exist in any namespace
-		if p.GetObjectKind().GroupVersionKind().Kind != coreProvider && p.GetName() == provider.GetName() {
-			preflightFalseCondition.Message = fmt.Sprintf(moreThanOneProviderInstanceExistsMessage, p.GetName(), p.GetNamespace())
-			log.Info(preflightFalseCondition.Message)
-			conditions.Set(provider, preflightFalseCondition)
-
-			return fmt.Errorf("only one %s provider is allowed in the cluster", p.GetName())
-		}
+		return fmt.Errorf("only one instance of CoreProvider is allowed")
 	}
-
-	// Wait for core provider to be ready before we install other providers.
-	if !util.IsCoreProvider(provider) {
-		ready, err := coreProviderIsReady(ctx, c)
-		if err != nil {
-			return fmt.Errorf("failed to get coreProvider ready condition: %w", err)
-		}
-
-		if !ready {
-			log.Info(waitingForCoreProviderReadyMessage)
-			conditions.Set(provider, conditions.FalseCondition(
-				operatorv1.PreflightCheckCondition,
-				operatorv1.WaitingForCoreProviderReadyReason,
-				clusterv1.ConditionSeverityInfo,
-				"%s", waitingForCoreProviderReadyMessage,
-			))
-
-			return errCoreProviderWait
-		}
-	}
-
-	conditions.Set(provider, conditions.TrueCondition(operatorv1.PreflightCheckCondition))
-
-	log.Info("Preflight checks passed")
 
 	return nil
 }
